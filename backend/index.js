@@ -22,30 +22,31 @@ app.use("/api/volunteers", volunteerRoutes);
 
 app.use(errorHandler);
 
-
+// Get Events
 app.get("/api/getevents", async (req, res) => {
-    try {
-      const events = await Event.find(); // Fetch all events from DB
-      res.json(events);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch events" });
-    }
-  });
-  
-  app.get("/api/getvolunteers", async (req, res) => {
-    try {
-      const volunteers = await Volunteer.find(); // Fetch all volunteers from DB
-      res.json(volunteers);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch volunteers" });
-    }
-  });
+  try {
+    const events = await Event.find(); // Fetch all events from DB
+    res.json(events);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch events" });
+  }
+});
 
+// Get Volunteers
+app.get("/api/getvolunteers", async (req, res) => {
+  try {
+    const volunteers = await Volunteer.find(); // Fetch all volunteers from DB
+    res.json(volunteers);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch volunteers" });
+  }
+});
 
+// Create Event with Event Type
 app.post("/api/events", async (req, res) => {
   try {
-    const { eventName, eventDate, budget, tasks } = req.body;
-    const newEvent = new Event({ eventName, eventDate, budget, tasks });
+    const { eventName, eventType, eventDate, budget, tasks } = req.body;
+    const newEvent = new Event({ eventName, eventType, eventDate, budget, tasks });
     await newEvent.save();
     res.status(201).json({ message: "Event saved successfully!" });
   } catch (error) {
@@ -54,6 +55,7 @@ app.post("/api/events", async (req, res) => {
   }
 });
 
+// Create Volunteer
 app.post("/api/volunteers", async (req, res) => {
   try {
     const { name, skills, availability } = req.body;
@@ -65,142 +67,164 @@ app.post("/api/volunteers", async (req, res) => {
   }
 });
 
+// Assign Volunteers to Tasks
 app.get("/api/assignVolunteers", async (req, res) => {
-    try {
-      const event = await Event.findOne(); // Fetch the event
-      const volunteers = await Volunteer.find(); // Fetch all volunteers
-  
-      if (!event || !volunteers.length) {
-        return res.status(400).json({ error: "No event or volunteers found" });
+  try {
+    const event = await Event.findOne();
+    const volunteers = await Volunteer.find();
+
+    if (!event || !volunteers.length) {
+      return res.status(400).json({ error: "No event or volunteers found" });
+    }
+
+    const tasks = Array.isArray(event.tasks) ? event.tasks.join(", ") : "";
+    const volunteersList = volunteers.map((v) =>` ${v.name}: ${v.skills.join(", ")}`).join("\n");
+
+    const aiPrompt = `
+      Given the following tasks for an event:
+      ${tasks}
+
+      And these available volunteers with their skills:
+      ${volunteersList}
+
+      Assign the best volunteer for each task based on their skills and availability.
+      Return output in JSON format like:
+      {
+        "logistics": "Volunteer Name",
+        "catering": "Volunteer Name",
+        "security": "Volunteer Name"
       }
-  
-      // Ensure tasks is an array and join them into a string
-      const tasks = Array.isArray(event.tasks) ? event.tasks.join(", ") : "";
-      // Ensure volunteers are formatted properly
-      const volunteersList = Array.isArray(volunteers)
-        ? volunteers.map((v) => `${v.name}: ${v.skills.join(", ")}`).join("\n")
-        : "";
-  
-      const aiPrompt = `
-        Given the following tasks for an event:
-        ${tasks}
-  
-        And these available volunteers with their skills:
-        ${volunteersList}
-  
-        Assign the best volunteer for each task based on their skills and availability.
-        Return output in JSON format like :
-        {
-          "logistics": "Volunteer Name",
-          "catering": "Volunteer Name",
-          "security": "Volunteer Name"
-        }
-      `;
-  
-      // API request to AI service (EdenAI)
-      const url = "https://api.edenai.run/v2/multimodal/chat";
-      const options = {
-        method: "POST",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-          authorization: `Bearer ${process.env.EDENAI_API_KEY}`, // Store key in .env
-        },
-        body: JSON.stringify({
-          response_as_dict: true,
-          attributes_as_list: false,
-          show_base_64: true,
-          show_original_response: false,
-          temperature: 0,
-          max_tokens: 1000,
-          providers: "openai",
-          messages: [
-            {
-              role: "user",
-              content:[
-                {
-                  type: "text",
-                  content: { text: aiPrompt },
-                },
-            ]
-            },
-          ],
-        }),
-      };
-  
-      const response = await fetch(url, options);
-      const data = await response.json();
-     console.log(data)
-      // Assuming the AI response comes as text, process it
-      const generatedText = data.openai.generated_text;
+    `;
 
-      console.log(generatedText)
-  
-      // Clean and extract only task and volunteer assignments
-      const jsonResponse = extractAssignmentsFromResponse(generatedText); // Parse to get assignments
-  
-      console.log(jsonResponse); // Verify the assignments format
-  
-      // Send the cleaned assignment data to the frontend
-      res.json({ assignments: jsonResponse });
-  
-    } catch (error) {
-      console.error("Error:", error);
-      res.status(500).json({ error: "AI response failed" });
-    }
-  });
-  
-  // Clean the response to filter out unnecessary information
-  function extractAssignmentsFromResponse(text) {
-    try {
-        // Remove unwanted characters (sometimes AI adds extra text)
-        const jsonText = text.match(/\{[\s\S]*\}/)?.[0]; // Extract JSON block
-        if (!jsonText) throw new Error("No JSON found in AI response");
+    const url = "https://api.edenai.run/v2/multimodal/chat";
+    const options = {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        authorization:`Bearer ${process.env.EDENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        response_as_dict: true,
+        attributes_as_list: false,
+        show_base_64: true,
+        show_original_response: false,
+        temperature: 0,
+        max_tokens: 1000,
+        providers: "openai",
+        messages:[
+          {
+            role: "user",
+            content:[
+              {
+                type: "text",
+                content: { text: aiPrompt },
+              },
+          ]
+          },
+        ],
+      }),
+    };
 
-        const assignments = JSON.parse(jsonText);
-        console.log(assignments); // Debugging: Check if parsing worked
-        return assignments;
-    } catch (error) {
-        console.error("Error parsing AI response:", error.message);
-        return {};
-    }
+    const response = await fetch(url, options);
+    const data = await response.json();
+    const generatedText = data.openai.generated_text;
+    const jsonResponse = extractAssignmentsFromResponse(generatedText);
+
+    res.json({ assignments: jsonResponse });
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).json({ error: "AI response failed" });
+  }
+});
+
+// Extract JSON assignments from AI response
+function extractAssignmentsFromResponse(text) {
+  try {
+    const jsonText = text.match(/\{[\s\S]*\}/)?.[0];
+    if (!jsonText) throw new Error("No JSON found in AI response");
+
+    return JSON.parse(jsonText);
+  } catch (error) {
+    console.error("Error parsing AI response:", error.message);
+    return {};
+  }
 }
 
-  
+// AI Assistant
+app.post("/aiAssistant", async (req, res) => {
+  try {
+    const { message } = req.body;
 
-  app.post("/aiAssistant", async (req, res) => {
-    try {
-      const { message } = req.body; // User's question from frontend
-  
-      const url = "https://api.edenai.run/v2/multimodal/chat";
-      const options = {
-        method: "POST",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-          authorization: `Bearer ${process.env.EDENAI_API_KEY}`, // Store key in .env
-        },
-        body: JSON.stringify({
-          response_as_dict: true,
-          attributes_as_list: false,
-          show_base_64: true,
-          show_original_response: false,
-          temperature: 0,
-          max_tokens: 1000,
-          providers: "openai",
-          messages: [{ role: "user", content: [{ type: "text", content: message }] }],
-        }),
-      };
-  
-      const response = await fetch(url, options);
-      const data = await response.json();
-      res.json({ reply: data.openai.generated_text });
-    } catch (error) {
-      console.error("Error:", error);
-      res.status(500).json({ error: "AI response failed" });
+    const url = "https://api.edenai.run/v2/multimodal/chat";
+    const options = {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        authorization:` Bearer ${process.env.EDENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        response_as_dict: true,
+        attributes_as_list: false,
+        show_base_64: true,
+        show_original_response: false,
+        temperature: 0,
+        max_tokens: 1000,
+        providers: "openai",
+        messages:[
+          {
+            role: "user",
+            content:[
+              {
+                type: "text",
+                content: { text: message },
+              },
+          ]
+          },
+        ],
+      }),
+    };
+
+    const response = await fetch(url, options);
+    const data = await response.json();
+    res.json({ reply: data.openai.generated_text });
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).json({ error: "AI response failed" });
+  }
+});
+
+// Generate Schedule with Timings
+app.get("/generateSchedule", async (req, res) => {
+  try {
+    const events = await Event.find();
+    if (!events.length) {
+      return res.status(400).json({ error: "No events found" });
     }
-  });
 
+    const schedule = {};
+    let startTime = new Date(); // Current time as the start time
+
+    events.forEach((event, index) => {
+      const duration = 2 * 60 * 60 * 1000; // 2 hours per event
+      const endTime = new Date(startTime.getTime() + duration);
+
+      schedule[event.eventType] = {
+        eventName: event.eventName,
+        startTime: startTime.toLocaleTimeString(),
+        endTime: endTime.toLocaleTimeString(),
+      };
+
+      startTime = new Date(endTime.getTime() + 30 * 60 * 1000); // 30-min break
+    });
+
+    res.json({ schedule });
+  } catch (error) {
+    console.error("Error generating schedule:", error);
+    res.status(500).json({ error: "Failed to generate schedule" });
+  }
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

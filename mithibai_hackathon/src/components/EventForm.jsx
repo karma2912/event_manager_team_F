@@ -46,7 +46,7 @@ const EventForm = () => {
   // AI Assistant Call
   const askAI = async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/aiAssistant", {
+      const response = await fetch("http://localhost:5000/aiAssistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: question }),
@@ -113,7 +113,7 @@ const EventForm = () => {
 
       {/* AI Assistant Section */}
       <div className="mt-6">
-        <h3 className="text-xl font-bold">Ask AI Assistant</h3>
+        <h3 className="text-xl font-bold">Generate Schedule</h3>
         <input
           type="text"
           placeholder="Ask anything about event planning..."
@@ -122,7 +122,7 @@ const EventForm = () => {
           className="w-full p-2 border rounded-lg mt-2"
         />
         <button onClick={askAI} className="bg-black text-white p-2 rounded-lg mt-2 w-full">
-          Ask AI
+          Generate
         </button>
         {aiResponse && <p className="mt-4 bg-gray-200 p-2 rounded-lg">{aiResponse}</p>}
       </div>
